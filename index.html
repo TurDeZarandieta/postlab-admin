@@ -520,7 +520,12 @@
 
     if (tab === 'bans') { loadBans(); return }
 
-    const { data, error } = await sb.rpc('get_reports_for_admin', { p_status: tab })
+    const { data, error } = await sb
+      .from('reports')
+      .select('*, reporter:users!reports_reporter_id_fkey(id, username)')
+      .eq('status', tab)
+      .order('created_at', { ascending: tab === 'pending' })
+      .limit(100)
 
     if (error) { content.innerHTML = `<div class="empty"><p>Error: ${error.message}</p></div>`; return }
     if (!data || data.length === 0) {
@@ -528,13 +533,7 @@
       return
     }
 
-    // Normalizar campos para que renderReportCard funcione igual
-    const normalized = data.map(r => ({
-      ...r,
-      reporter: { id: r.reporter_id, username: r.reporter_username, email: r.reporter_email }
-    }))
-
-    content.innerHTML = normalized.map(r => renderReportCard(r)).join('')
+    content.innerHTML = data.map(r => renderReportCard(r)).join('')
   }
 
   function renderReportCard(r) {
@@ -554,7 +553,7 @@
         </div>
 
         <div class="report-body">
-          <p>Reportado por <strong>${r.reporter?.username ?? '—'}</strong> (${r.reporter?.email ?? '—'})</p>
+          <p>Reportado por <strong>${r.reporter?.username ?? '—'}</strong></p>
           <div class="target-id">ID del contenido: ${r.target_id}</div>
           ${r.details ? `<div class="report-details">"${r.details}"</div>` : ''}
           ${resolvedDate ? `<p style="margin-top:8px;font-size:12px;color:var(--text3)">Resuelto el ${resolvedDate}</p>` : ''}
@@ -667,7 +666,7 @@
 
     const { data, error } = await sb
       .from('bans')
-      .select('*, user:users!bans_user_id_fkey(id, username, email)')
+      .select('*, user:users!bans_user_id_fkey(id, username)')
       .order('created_at', { ascending: false })
 
     if (error) { content.innerHTML = `<div class="empty"><p>Error: ${error.message}</p></div>`; return }
@@ -683,7 +682,6 @@
           <div class="report-header">
             <div class="report-meta">
               <span class="badge badge-type">@${b.user?.username ?? '—'}</span>
-              <span style="font-size:12px;color:var(--text3)">${b.user?.email ?? '—'}</span>
             </div>
             <span class="report-time">${date}</span>
           </div>
