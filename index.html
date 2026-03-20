@@ -377,6 +377,7 @@
       <button class="tab" onclick="switchTab('accepted')" id="tab-accepted">Aceptados</button>
       <button class="tab" onclick="switchTab('rejected')" id="tab-rejected">Rechazados</button>
       <button class="tab" onclick="switchTab('bans')" id="tab-bans">Baneados</button>
+      <button class="tab" onclick="switchTab('verifications')" id="tab-verifications">Verificaciones</button>
     </div>
 
     <!-- Content -->
@@ -519,6 +520,7 @@
     content.innerHTML = '<div class="loading">Cargando...</div>'
 
     if (tab === 'bans') { loadBans(); return }
+    if (tab === 'verifications') { loadVerifications(); return }
 
     const { data, error } = await sb
       .from('reports')
@@ -702,6 +704,114 @@
     if (error) { showToast('Error: ' + error.message, 'error'); return }
     showToast('Usuario desbaneado', 'success')
     loadBans()
+  }
+
+  // ── VERIFICATIONS ────────────────────────────────────────
+  async function loadVerifications() {
+    const content = document.getElementById('content')
+
+    const { data, error } = await sb
+      .from('forum_verification_requests')
+      .select(`
+        *,
+        forum:forums!forum_verification_requests_forum_id_fkey(id, name, is_news, is_verified),
+        requester:users!forum_verification_requests_requested_by_fkey(id, username)
+      `)
+      .order('created_at', { ascending: true })
+      .limit(100)
+
+    if (error) { content.innerHTML = `<div class="empty"><p>Error: ${error.message}</p></div>`; return }
+    if (!data || data.length === 0) {
+      content.innerHTML = '<div class="empty"><div class="empty-icon">✓</div><p>No hay solicitudes de verificación</p></div>'
+      return
+    }
+
+    // Obtener emails de auth.users para cada solicitante
+    const verifications = await Promise.all(data.map(async (v) => {
+      // Obtenemos el email buscando en la tabla de reportes o directamente
+      return v
+    }))
+
+    content.innerHTML = data.map(v => renderVerificationCard(v)).join('')
+  }
+
+  function renderVerificationCard(v) {
+    const isPending = v.status === 'pending'
+    const date = new Date(v.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const resolvedDate = v.resolved_at ? new Date(v.resolved_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : null
+
+    const statusLabel = v.status === 'pending' ? 'Pendiente' : v.status === 'accepted' ? 'Aceptada' : 'Rechazada'
+
+    return `
+      <div class="report-card" id="verification-${v.id}">
+        <div class="report-header">
+          <div class="report-meta">
+            <span class="badge badge-type">${v.forum?.name ?? '—'}</span>
+            ${v.forum?.is_news ? '<span class="badge badge-reason">Noticias</span>' : ''}
+            ${v.forum?.is_verified ? '<span class="badge badge-accepted">Verificado</span>' : ''}
+            <span class="badge badge-${v.status}">${statusLabel}</span>
+          </div>
+          <span class="report-time">${date}</span>
+        </div>
+
+        <div class="report-body">
+          <p>Solicitado por <strong>${v.requester?.username ?? '—'}</strong></p>
+          <div class="target-id">Forum ID: ${v.forum_id}</div>
+          ${v.reason ? `<div class="report-details">${v.reason}</div>` : ''}
+          ${resolvedDate ? `<p style="margin-top:8px;font-size:12px;color:var(--text3)">Resuelto el ${resolvedDate}</p>` : ''}
+        </div>
+
+        ${isPending ? `
+          <div class="report-actions">
+            <button class="btn-success" onclick="resolveVerification('${v.id}', 'accepted')">✓ Verificar foro</button>
+            <button class="btn-ghost" onclick="resolveVerification('${v.id}', 'rejected')">✗ Rechazar</button>
+            <button class="btn-ghost" style="border-color:rgba(255,255,255,0.2)" onclick="contactRequester('${v.forum_id}', '${v.requested_by}')">✉ Contactar</button>
+          </div>
+        ` : `
+          <div class="report-actions">
+            <button class="btn-ghost" style="border-color:rgba(255,255,255,0.2)" onclick="contactRequester('${v.forum_id}', '${v.requested_by}')">✉ Contactar</button>
+          </div>
+        `}
+      </div>
+    `
+  }
+
+  async function resolveVerification(requestId, status) {
+    const label = status === 'accepted' ? 'verificar este foro' : 'rechazar esta solicitud'
+    if (!confirm(`¿Seguro que quieres ${label}?`)) return
+
+    const { error } = await sb.rpc('resolve_verification_request', {
+      p_request_id: requestId,
+      p_status: status,
+    })
+
+    if (error) { showToast('Error: ' + error.message, 'error'); return }
+
+    showToast(status === 'accepted' ? 'Foro verificado ✓' : 'Solicitud rechazada', 'success')
+    loadVerifications()
+  }
+
+  async function contactRequester(forumId, requestedBy) {
+    // Obtener el email del solicitante a través de sus reportes o directamente
+    // Como no tenemos acceso directo a auth.users desde el cliente,
+    // buscamos en la tabla users el username y mostramos instrucciones
+    const { data: userData } = await sb
+      .from('users')
+      .select('username')
+      .eq('id', requestedBy)
+      .single()
+
+    const username = userData?.username ?? '—'
+
+    // Abrir cliente de email — el admin tendrá que buscar el email en Supabase Auth
+    const subject = encodeURIComponent(`PostLab — Solicitud de verificación de foro`)
+    const body = encodeURIComponent(`Hola ${username},\n\nNos ponemos en contacto contigo en relación a la solicitud de verificación del foro (ID: ${forumId}).\n\n`)
+
+    // Intentar abrir mailto — si el admin necesita el email exacto, debe buscarlo en Supabase Auth Dashboard
+    const mailtoLink = `mailto:?subject=${subject}&body=${body}`
+    window.open(mailtoLink, '_blank')
+
+    showToast(`Abre tu cliente de email. Busca el email de @${username} en Supabase Auth → Users`, 'success')
   }
 
   // ── TOAST ────────────────────────────────────────────────
