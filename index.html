@@ -138,6 +138,29 @@
 
     main { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
 
+    /* ── SECTION NAV ── */
+    .section-nav {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .section-btn {
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text3);
+      background: transparent;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .section-btn.active {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
     /* ── TABS ── */
     .tabs {
       display: flex;
@@ -372,13 +395,23 @@
       </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="tabs">
+    <!-- Sección nav -->
+    <div class="section-nav">
+      <button class="section-btn active" onclick="switchSection('reports')" id="section-reports">Reportes</button>
+      <button class="section-btn" onclick="switchSection('verifications')" id="section-verifications">Verificaciones</button>
+    </div>
+
+    <!-- Tabs de reportes -->
+    <div class="tabs" id="tabs-reports">
       <button class="tab active" onclick="switchTab('pending')" id="tab-pending">Pendientes</button>
       <button class="tab" onclick="switchTab('accepted')" id="tab-accepted">Aceptados</button>
       <button class="tab" onclick="switchTab('rejected')" id="tab-rejected">Rechazados</button>
-      <button class="tab" onclick="switchTab('bans')" id="tab-bans">Baneados</button>
-      <button class="tab" onclick="switchTab('verifications')" id="tab-verifications">Verificaciones</button>
+      <button class="tab" onclick="switchTab('bans')" id="tab-bans">Usuarios baneados</button>
+    </div>
+
+    <!-- Tabs de verificaciones -->
+    <div class="tabs" id="tabs-verifications" style="display:none">
+      <button class="tab active" onclick="switchTab('forum-verifications')" id="tab-forum-verifications">Verificación de foro de noticias</button>
       <button class="tab" onclick="switchTab('creators')" id="tab-creators">Creadores</button>
     </div>
 
@@ -510,9 +543,34 @@
   }
 
   // ── TABS ─────────────────────────────────────────────────
+  let currentSection = 'reports'
+
+  function switchSection(section) {
+    currentSection = section
+    document.querySelectorAll('.section-btn').forEach(b => b.classList.remove('active'))
+    document.getElementById(`section-${section}`).classList.add('active')
+
+    if (section === 'reports') {
+      document.getElementById('tabs-reports').style.display = 'flex'
+      document.getElementById('tabs-verifications').style.display = 'none'
+      // Activar primer tab de reportes
+      document.querySelectorAll('#tabs-reports .tab').forEach(t => t.classList.remove('active'))
+      document.getElementById('tab-pending').classList.add('active')
+      loadTab('pending')
+    } else {
+      document.getElementById('tabs-reports').style.display = 'none'
+      document.getElementById('tabs-verifications').style.display = 'flex'
+      // Activar primer tab de verificaciones
+      document.querySelectorAll('#tabs-verifications .tab').forEach(t => t.classList.remove('active'))
+      document.getElementById('tab-forum-verifications').classList.add('active')
+      loadTab('forum-verifications')
+    }
+  }
+
   function switchTab(tab) {
     currentTab = tab
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+    const section = currentSection === 'reports' ? 'tabs-reports' : 'tabs-verifications'
+    document.querySelectorAll(`#${section} .tab`).forEach(t => t.classList.remove('active'))
     document.getElementById(`tab-${tab}`).classList.add('active')
     loadTab(tab)
   }
@@ -522,6 +580,7 @@
     content.innerHTML = '<div class="loading">Cargando...</div>'
 
     if (tab === 'bans') { loadBans(); return }
+    if (tab === 'forum-verifications') { loadVerifications(); return }
     if (tab === 'verifications') { loadVerifications(); return }
     if (tab === 'creators') { loadCreators(); return }
 
