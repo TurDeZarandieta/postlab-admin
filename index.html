@@ -399,6 +399,7 @@
     <div class="section-nav">
       <button class="section-btn active" onclick="switchSection('reports')" id="section-reports">Reportes</button>
       <button class="section-btn" onclick="switchSection('verifications')" id="section-verifications">Verificaciones</button>
+      <button class="section-btn" onclick="switchSection('music')" id="section-music">Música</button>
     </div>
 
     <!-- Tabs de reportes -->
@@ -413,6 +414,13 @@
     <div class="tabs" id="tabs-verifications" style="display:none">
       <button class="tab active" onclick="switchTab('forum-verifications')" id="tab-forum-verifications">Verificación de foro de noticias</button>
       <button class="tab" onclick="switchTab('creators')" id="tab-creators">Verificación cuenta de Creadores</button>
+    </div>
+
+    <!-- Tabs de música -->
+    <div class="tabs" id="tabs-music" style="display:none">
+      <button class="tab active" onclick="switchTab('music-pending')" id="tab-music-pending">Pendientes</button>
+      <button class="tab" onclick="switchTab('music-accepted')" id="tab-music-accepted">Aceptadas</button>
+      <button class="tab" onclick="switchTab('music-rejected')" id="tab-music-rejected">Rechazadas</button>
     </div>
 
     <!-- Content -->
@@ -550,27 +558,34 @@
     document.querySelectorAll('.section-btn').forEach(b => b.classList.remove('active'))
     document.getElementById(`section-${section}`).classList.add('active')
 
+    document.getElementById('tabs-reports').style.display = 'none'
+    document.getElementById('tabs-verifications').style.display = 'none'
+    document.getElementById('tabs-music').style.display = 'none'
+
     if (section === 'reports') {
       document.getElementById('tabs-reports').style.display = 'flex'
-      document.getElementById('tabs-verifications').style.display = 'none'
-      // Activar primer tab de reportes
       document.querySelectorAll('#tabs-reports .tab').forEach(t => t.classList.remove('active'))
       document.getElementById('tab-pending').classList.add('active')
       loadTab('pending')
-    } else {
-      document.getElementById('tabs-reports').style.display = 'none'
+    } else if (section === 'verifications') {
       document.getElementById('tabs-verifications').style.display = 'flex'
-      // Activar primer tab de verificaciones
       document.querySelectorAll('#tabs-verifications .tab').forEach(t => t.classList.remove('active'))
       document.getElementById('tab-forum-verifications').classList.add('active')
       loadTab('forum-verifications')
+    } else if (section === 'music') {
+      document.getElementById('tabs-music').style.display = 'flex'
+      document.querySelectorAll('#tabs-music .tab').forEach(t => t.classList.remove('active'))
+      document.getElementById('tab-music-pending').classList.add('active')
+      loadTab('music-pending')
     }
   }
 
   function switchTab(tab) {
     currentTab = tab
-    const section = currentSection === 'reports' ? 'tabs-reports' : 'tabs-verifications'
-    document.querySelectorAll(`#${section} .tab`).forEach(t => t.classList.remove('active'))
+    const sectionId = currentSection === 'reports' ? 'tabs-reports'
+      : currentSection === 'music' ? 'tabs-music'
+      : 'tabs-verifications'
+    document.querySelectorAll(`#${sectionId} .tab`).forEach(t => t.classList.remove('active'))
     document.getElementById(`tab-${tab}`).classList.add('active')
     loadTab(tab)
   }
@@ -583,6 +598,9 @@
     if (tab === 'forum-verifications') { loadVerifications(); return }
     if (tab === 'verifications') { loadVerifications(); return }
     if (tab === 'creators') { loadCreators(); return }
+    if (tab === 'music-pending') { loadMusic('pending'); return }
+    if (tab === 'music-accepted') { loadMusic('accepted'); return }
+    if (tab === 'music-rejected') { loadMusic('rejected'); return }
 
     const { data, error } = await sb
       .from('reports')
@@ -921,6 +939,77 @@
 
     showToast(status === 'accepted' ? 'Creador verificado ✦' : 'Solicitud rechazada', 'success')
     loadCreators()
+  }
+
+  // ── MUSIC ─────────────────────────────────────────────────
+  async function loadMusic(status) {
+    const content = document.getElementById('content')
+
+    const { data, error } = await sb
+      .from('creator_music')
+      .select(`
+        *,
+        creator:users!creator_music_creator_id_fkey(id, username)
+      `)
+      .eq('status', status)
+      .order('created_at', { ascending: status === 'pending' })
+      .limit(100)
+
+    if (error) { content.innerHTML = `<div class="empty"><p>Error: ${error.message}</p></div>`; return }
+    if (!data || data.length === 0) {
+      content.innerHTML = `<div class="empty"><div class="empty-icon">🎵</div><p>No hay música ${status === 'pending' ? 'pendiente' : status === 'accepted' ? 'aceptada' : 'rechazada'}</p></div>`
+      return
+    }
+
+    content.innerHTML = data.map(m => renderMusicCard(m)).join('')
+  }
+
+  function renderMusicCard(m) {
+    const isPending = m.status === 'pending'
+    const date = new Date(m.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+    return `
+      <div class="report-card">
+        <div class="report-header">
+          <div class="report-meta">
+            <span class="badge badge-type">@${m.creator?.username ?? '—'}</span>
+            <span class="badge badge-${m.status}">${m.status === 'pending' ? 'Pendiente' : m.status === 'accepted' ? 'Aceptada' : 'Rechazada'}</span>
+          </div>
+          <span class="report-time">${date}</span>
+        </div>
+        <div class="report-body" style="display:flex;gap:14px;align-items:flex-start">
+          <img src="${m.cover_url}" style="width:72px;height:72px;border-radius:8px;object-fit:cover;flex-shrink:0" />
+          <div>
+            <p><strong style="color:var(--text)">${m.title}</strong></p>
+            <audio controls style="margin-top:8px;width:100%;max-width:300px">
+              <source src="${m.audio_url}" />
+            </audio>
+          </div>
+        </div>
+        ${isPending ? `
+          <div class="report-actions">
+            <button class="btn-success" onclick="resolveMusic('${m.id}', 'accepted')">✓ Aceptar música</button>
+            <button class="btn-ghost" onclick="resolveMusic('${m.id}', 'rejected')">✗ Rechazar</button>
+            <button class="btn-ghost" style="border-color:rgba(255,255,255,0.2)" onclick="contactRequester(null, '${m.creator_id}', '${m.creator?.username ?? ''}')">✉ Contactar</button>
+          </div>
+        ` : ''}
+      </div>
+    `
+  }
+
+  async function resolveMusic(musicId, status) {
+    const label = status === 'accepted' ? 'aceptar esta música' : 'rechazar esta música'
+    if (!confirm(`¿Seguro que quieres ${label}?`)) return
+
+    const { error } = await sb.rpc('resolve_music_request', {
+      p_music_id: musicId,
+      p_status: status,
+    })
+
+    if (error) { showToast('Error: ' + error.message, 'error'); return }
+
+    showToast(status === 'accepted' ? 'Música aceptada ✓' : 'Música rechazada', 'success')
+    loadMusic('pending')
   }
 
   // ── TOAST ────────────────────────────────────────────────
